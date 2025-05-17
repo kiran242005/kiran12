@@ -1,0 +1,195 @@
+from google.colab import files
+uploaded = files.upload()
+
+!pip install matplotlib-venn
+
+!apt-get -qq install -y libfluidsynth1
+
+# https://pypi.python.org/pypi/libarchive
+!apt-get -qq install -y libarchive-dev && pip install -U libarchive
+import libarchive
+
+# https://pypi.python.org/pypi/pydot
+!apt-get -qq install -y graphviz && pip install pydot
+import pydot
+
+!pip install gradio
+
+# Gradio interface
+def predict_fraud(amount, time, merchant, device, present):
+    try:
+        time = min(max(0, float(time)), 23)
+        amount = float(amount)
+        present = 1 if present == 'Yes' else 0
+        hour_group = pd.cut(
+            [time], bins=[0, 6, 12, 18, 24],
+            labels=['Night', 'Morning', 'Afternoon', 'Evening'], right=False
+        )[0]
+
+        data = pd.DataFrame([{
+            'transaction_amount': amount,
+            'account_age_days': 365,
+            'transaction_time': time,
+            'merchant_category': merchant,
+            'device_type': device,
+            'transaction_hour_group': hour_group,
+            'card_present': present
+        }])
+
+        proba = best_model.predict_proba(data)[0, 1]
+        return f"{proba:.2f}"
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+examples = [
+    [120.50, 14, 'Food', 'Mobile', 'Yes'],
+    [400.00, 23, 'Travel', 'Web', 'No']
+]
+
+iface = gr.Interface(
+    fn=predict_fraud,
+    inputs=[
+        gr.Number(label="Transaction Amount"),
+        gr.Number(label="Transaction Time (0–23)"),
+        gr.Dropdown(choices=['Retail', 'Food', 'Travel', 'Other'], label="Merchant Category"),
+        gr.Dropdown(choices=['Mobile', 'Web', 'POS'], label="Device Type"),
+        gr.Radio(choices=['Yes', 'No'], label="Card Present")
+    ],
+    outputs=gr.Textbox(label="Fraud Risk Score"),
+    title="AI-Powered Credit Card Fraud Detector",
+    description="Enter transaction details to get a real-time fraud risk score.",
+    examples=examples
+)
+
+# Fix the typo: _name_ instead of name
+if _name_ == "_main_":
+    iface.launch(share=True)
+
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import classification_report, roc_auc_score
+import gradio as gr
+
+# 1. Load data
+df = pd.read_csv('transactions.csv')
+
+# 2. Preprocessing
+df.drop_duplicates(inplace=True)
+df.dropna(inplace=True)  # Or use imputers as needed
+
+# Encode 'card_present' early for consistency
+df['card_present'] = df['card_present'].map({'Yes': 1, 'No': 0})
+
+# Create transaction hour group
+df['transaction_hour_group'] = pd.cut(
+    df['transaction_time'],
+    bins=[0, 6, 12, 18, 24],
+    labels=['Night', 'Morning', 'Afternoon', 'Evening'],
+    right=False
+)
+
+# Define features and target
+X = df.drop(columns=['is_fraud', 'transaction_id'])
+y = df['is_fraud']
+
+# Train/test split
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.15, stratify=y, random_state=42
+)
+
+# Preprocessing pipelines
+numeric_features = ['transaction_amount', 'account_age_days', 'transaction_time']
+categorical_features = ['merchant_category', 'device_type', 'transaction_hour_group', 'card_present']
+
+numeric_transformer = Pipeline(steps=[
+    ('imputer', SimpleImputer(strategy='mean')),
+    ('scaler', StandardScaler())
+])
+
+categorical_transformer = Pipeline(steps=[
+    ('imputer', SimpleImputer(strategy='most_frequent')),
+    ('onehot', OneHotEncoder(handle_unknown='ignore'))
+])
+
+preprocessor = ColumnTransformer(transformers=[
+    ('num', numeric_transformer, numeric_features),
+    ('cat', categorical_transformer, categorical_features)
+])
+
+# Models
+models = {
+    'LogisticRegression': LogisticRegression(class_weight='balanced', max_iter=1000, random_state=42),
+    'RandomForest': RandomForestClassifier(n_estimators=200, class_weight='balanced', random_state=42)
+}
+
+trained_models = {}
+for name, model in models.items():
+    clf = Pipeline(steps=[('preproc', preprocessor), ('clf', model)])
+    clf.fit(X_train, y_train)
+    y_pred = clf.predict(X_test)
+    y_proba = clf.predict_proba(X_test)[:, 1]
+    print(f"--- {name} Classification Report ---")
+    print(classification_report(y_test, y_pred, digits=4))
+    print(f"ROC AUC: {roc_auc_score(y_test, y_proba):.4f}\n")
+    trained_models[name] = clf
+
+# Choose best model for deployment
+best_model = trained_models['RandomForest']
+
+# Gradio interface
+def predict_fraud(amount, time, merchant, device, present):
+    try:
+        time = min(max(0, float(time)), 23)
+        amount = float(amount)
+        present = 1 if present == 'Yes' else 0
+        hour_group = pd.cut(
+            [time], bins=[0, 6, 12, 18, 24],
+            labels=['Night', 'Morning', 'Afternoon', 'Evening'], right=False
+        )[0]
+
+        data = pd.DataFrame([{
+            'transaction_amount': amount,
+            'account_age_days': 365,
+            'transaction_time': time,
+            'merchant_category': merchant,
+            'device_type': device,
+            'transaction_hour_group': hour_group,
+            'card_present': present
+        }])
+
+        proba = best_model.predict_proba(data)[0, 1]
+        return f"{proba:.2f}"
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+examples = [
+    [120.50, 14, 'Food', 'Mobile', 'Yes'],
+    [400.00, 23, 'Travel', 'Web', 'No']
+]
+
+iface = gr.Interface(
+    fn=predict_fraud,
+    inputs=[
+        gr.Number(label="Transaction Amount"),
+        gr.Number(label="Transaction Time (0–23)"),
+        gr.Dropdown(choices=['Retail', 'Food', 'Travel', 'Other'], label="Merchant Category"),
+        gr.Dropdown(choices=['Mobile', 'Web', 'POS'], label="Device Type"),
+        gr.Radio(choices=['Yes', 'No'], label="Card Present")
+    ],
+    outputs=gr.Textbox(label="Fraud Risk Score"),
+    title="AI-Powered Credit Card Fraud Detector",
+    description="Enter transaction details to get a real-time fraud risk score.",
+    examples=examples
+)
+
+if _name_ == "_main_":
+    iface.launch(share=True)
+
+

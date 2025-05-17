@@ -1,0 +1,49 @@
+# Gradio interface
+def predict_fraud(amount, time, merchant, device, present):
+    try:
+        time = min(max(0, float(time)), 23)
+        amount = float(amount)
+        present = 1 if present == 'Yes' else 0
+        hour_group = pd.cut(
+            [time], bins=[0, 6, 12, 18, 24],
+            labels=['Night', 'Morning', 'Afternoon', 'Evening'], right=False
+        )[0]
+
+        data = pd.DataFrame([{
+            'transaction_amount': amount,
+            'account_age_days': 365,
+            'transaction_time': time,
+            'merchant_category': merchant,
+            'device_type': device,
+            'transaction_hour_group': hour_group,
+            'card_present': present
+        }])
+
+        proba = best_model.predict_proba(data)[0, 1]
+        return f"{proba:.2f}"
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+examples = [
+    [120.50, 14, 'Food', 'Mobile', 'Yes'],
+    [400.00, 23, 'Travel', 'Web', 'No']
+]
+
+iface = gr.Interface(
+    fn=predict_fraud,
+    inputs=[
+        gr.Number(label="Transaction Amount"),
+        gr.Number(label="Transaction Time (0–23)"),
+        gr.Dropdown(choices=['Retail', 'Food', 'Travel', 'Other'], label="Merchant Category"),
+        gr.Dropdown(choices=['Mobile', 'Web', 'POS'], label="Device Type"),
+        gr.Radio(choices=['Yes', 'No'], label="Card Present")
+    ],
+    outputs=gr.Textbox(label="Fraud Risk Score"),
+    title="AI-Powered Credit Card Fraud Detector",
+    description="Enter transaction details to get a real-time fraud risk score.",
+    examples=examples
+)
+
+# Fix the typo: __name__ instead of _name_
+if __name__ == "__main__":
+    iface.launch(share=True)
